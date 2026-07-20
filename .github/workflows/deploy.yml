@@ -30,7 +30,7 @@ jobs:
       - name: Restart service
         run: sudo systemctl restart taskmanagement.service
 
-      # - name: Health check
+      # - name: Health check 
       #   run: |
       #     sleep 3
       #     curl -f https://localtasklist.com/ || (echo "Health check failed" && exit 1)

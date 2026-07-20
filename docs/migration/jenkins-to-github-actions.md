@@ -7,7 +7,7 @@ Replace the Windows/Jenkins/IIS deployment pipeline for `Api.Server` + `api.clie
 - Systemd service: `taskmanagement.service`
 - Domain: `localtasklist.com` — **DNS not migrated yet**; site is currently reached only via the server's bare IP, over HTTP (no SSL yet)
 - Current nginx: `default_server` on port 80 catches all requests to the IP (no `server_name` matching needed)
-- .NET: 10 (SDK+runtime already installed on VPS — verify version matches `net10.0` target)
+- .NET: 10 — **only the runtime was pre-installed on the VPS, not the SDK**; `dotnet restore/build/publish` in Section 6's workflow require the SDK (see Section 5b)
 - Kestrel port: `5000` (nginx proxies → `127.0.0.1:5000`)
 - App root: `/var/www/taskmanagement`
 - App/CI user: `githubrunner` (already created)
@@ -129,6 +129,24 @@ sudo bash -c "cd /home/githubrunner/actions-runner && ./svc.sh status"
 ```
 The `githubrunner` argument to `install` tells the script which user the *systemd service* should run as — it doesn't require you to be logged in as that user to run the command.
 
+## 5b. Install the .NET SDK on the VPS (runtime alone isn't enough)
+**Run as:** sudo/root — one-time manual setup.
+The VPS only had the .NET **runtime** installed (needed to run `taskmanagement.service`), not the **SDK** — `dotnet restore/build/publish` in Section 6's workflow fail without it (the `Setup .NET` GitHub Action step was removed in Section 6 because it tried to install its own copy into `/usr/share/dotnet`, which `githubrunner` can't write to — installing the SDK system-wide via apt, as root, avoids that permission issue entirely).
+```bash
+wget https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+sudo dpkg -i packages-microsoft-prod.deb
+rm packages-microsoft-prod.deb
+sudo apt-get update
+sudo apt-get install -y dotnet-sdk-10.0
+dotnet --list-sdks
+```
+If `dotnet-sdk-10.0` isn't available yet for your Ubuntu release in Microsoft's feed, use the install script instead:
+```bash
+curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+sudo bash dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
+dotnet --list-sdks
+```
+
 ## 6. GitHub Actions workflow
 **Run as:** `githubrunner` — this is the part that runs **automatically** on every push to `master` via the self-hosted runner installed in Section 5.
 
@@ -147,11 +165,6 @@ jobs:
       APP_ROOT: /var/www/taskmanagement
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
 
       - name: Restore
         run: dotnet restore Api.sln
