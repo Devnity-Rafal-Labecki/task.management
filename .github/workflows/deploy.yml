@@ -1,0 +1,46 @@
+name: Build and Deploy
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build-and-deploy:
+    runs-on: [self-hosted, linux-vps]
+    env:
+      RELEASE_DIR: /var/www/taskmanagement/releases/${{ github.sha }}
+      APP_ROOT: /var/www/taskmanagement
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Api.sln
+
+      - name: Build
+        run: dotnet build Api.sln --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish Api.Server/Api.Server.csproj --configuration Release --no-build --output "$RELEASE_DIR"
+        # api.client is built automatically via the SPA MSBuild targets during publish
+
+      - name: Atomic symlink swap
+        run: |
+          ln -sfn "$RELEASE_DIR" "$APP_ROOT/current_new"
+          mv -Tf "$APP_ROOT/current_new" "$APP_ROOT/current"
+
+      - name: Restart service
+        run: sudo systemctl restart taskmanagement.service
+
+      # - name: Health check
+      #   run: |
+      #     sleep 3
+      #     curl -f https://localtasklist.com/ || (echo "Health check failed" && exit 1)
+
+      - name: Cleanup old releases
+        run: |
+          cd "$APP_ROOT/releases"
+          ls -1dt */ | tail -n +6 | xargs -r rm -rf
